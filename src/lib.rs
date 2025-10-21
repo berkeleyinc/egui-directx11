@@ -86,7 +86,7 @@ pub fn split_output(
 ) -> (
     RendererOutput,
     egui::PlatformOutput,
-    egui::ViewportIdMap<egui::ViewportOutput>,
+    // egui::ViewportIdMap<egui::ViewportOutput>,
 ) {
     (
         RendererOutput {
@@ -95,7 +95,7 @@ pub fn split_output(
             pixels_per_point: full_output.pixels_per_point,
         },
         full_output.platform_output,
-        full_output.viewport_output,
+        // full_output.viewport_output,
     )
 }
 
