@@ -78,7 +78,7 @@ impl App for WinD11WrapApp {
         );
 
         let egui_ctx = egui::Context::default();
-        egui_ctx.set_request_repaint_callback(move |v| {
+        egui_ctx.set_request_repaint_callback(move |_v| {
             event_loop_proxy.send_event(()).ok();
         });
 
@@ -94,7 +94,7 @@ impl App for WinD11WrapApp {
         );
 
         Self {
-            app: EguiApp::new(&egui_ctx),
+            app: EguiApp::new(),
 
             device,
             device_context,
@@ -140,10 +140,10 @@ impl App for WinD11WrapApp {
         if let Some(render_target) = &self.render_target {
             let egui_input = self.egui_winit.take_egui_input(window);
             let egui_ctx = self.egui_ctx.clone();
-            let egui_output = egui_ctx.run(egui_input, |ctx| {
-                self.app.ui(&ctx);
+            let egui_output = egui_ctx.run_ui(egui_input, |ui| {
+                self.app.ui(ui);
             });
-            let (renderer_output, platform_output, _) =
+            let (renderer_output, platform_output) =
                 egui_directx11::split_output(egui_output);
             self.egui_winit
                 .handle_platform_output(window, platform_output);
@@ -334,7 +334,7 @@ impl<T: App> ApplicationHandler for AppRunner<T> {
         self.window.take();
     }
 
-    fn user_event(&mut self, _: &ActiveEventLoop, event: ()) {
+    fn user_event(&mut self, _: &ActiveEventLoop, _event: ()) {
         if let Some(window) = self.window.as_ref() {
             window.request_redraw();
         }
@@ -354,13 +354,13 @@ impl<T: App> ApplicationHandler for AppRunner<T> {
                         EventResult::Wait => {
                             event_loop.set_control_flow(ControlFlow::Wait);
                         },
-                        EventResult::RepaintNow(window_id) => {
+                        EventResult::RepaintNow(_window_id) => {
                             win_d11.render(window);
                         },
-                        EventResult::RepaintNext(window_id) => {
+                        EventResult::RepaintNext(_window_id) => {
                             win_d11.render(window);
                         },
-                        EventResult::RepaintAt(window_id, _) => {},
+                        EventResult::RepaintAt(_window_id, _) => {},
                         EventResult::Save => {},
                         EventResult::CloseRequested => {
                             event_loop.exit();
@@ -420,16 +420,13 @@ pub enum EventResult {
 }
 
 struct EguiApp {
-    egui_ctx: egui::Context,
-
     egui_demo: egui_demo_lib::DemoWindows,
     egui_color_test: egui_demo_lib::ColorTest,
 }
 
 impl EguiApp {
-    fn new(egui_ctx: &Context) -> Self {
+    fn new() -> Self {
         Self {
-            egui_ctx: egui_ctx.clone(),
             egui_demo: egui_demo_lib::DemoWindows::default(),
             egui_color_test: egui_demo_lib::ColorTest::default(),
         }
@@ -437,22 +434,26 @@ impl EguiApp {
 }
 
 impl EguiApp {
-    fn ui(&mut self, ctx: &egui::Context) {
+    fn ui(&mut self, ui: &mut egui::Ui) {
         let args = env::args().skip(1).collect::<Vec<_>>();
         let args = args.iter().map(String::as_str).collect::<Vec<_>>();
         match &args[..] {
-            [] => self.egui_demo.ui(ctx),
-            ["color-test"] => self.color_test(ctx),
+            // `DemoWindows::ui` and `color_test` work on the root `Ui` since
+            // egui 0.36 (`run_ui` hands the closure a `&mut Ui`).
+            [] => self.egui_demo.ui(ui),
+            ["color-test"] => self.color_test(ui),
             _ => panic!("Unknown arguments: {:?}", args),
         }
     }
 
-    fn color_test(&mut self, ctx: &egui::Context) {
+    fn color_test(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let ctx = &ctx;
         use egui::Window;
 
         const WINDOW_WIDTH: f32 = 640.0;
 
-        let screen_rect = ctx.input(|input| input.screen_rect);
+        let screen_rect = ctx.viewport_rect();
         let window_height = screen_rect.height() - 60.0;
 
         Window::new("Color Test")

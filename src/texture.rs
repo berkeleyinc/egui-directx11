@@ -44,36 +44,54 @@ impl TexturePool {
     pub fn update(
         &mut self,
         ctx: &ID3D11DeviceContext,
-        delta: TexturesDelta,
+        mut delta: TexturesDelta,
     ) -> Result<()> {
-        for (tid, delta) in delta.set {
-            if delta.is_whole()
-                && delta.image.width() > 0
-                && delta.image.height() > 0
-            {
-                self.pool.insert(
-                    tid,
-                    Self::create_texture(&self.device, delta.image)?,
-                );
-                // the old texture is returned and dropped here, freeing
-                // all its gpu resource.
-            } else if let Some(tex) = self.pool.get_mut(&tid) {
-                Self::update_partial(
-                    ctx,
-                    tex,
-                    delta.image,
-                    delta.pos.unwrap(),
-                )?;
-            } else {
-                log::warn!(
-                    "egui wants to update a non-existing texture {tid:?}. this request will be ignored."
-                );
+        // `set` maps each texture to a list of deltas: a whole-texture upload
+        // replaces the entry, while partials apply in order. Consume the set so
+        // the `Drop` assert on `TexturesDelta` stays quiet.
+        //
+        // The work is done in a closure so `delta` is always cleared, even when a
+        // D3D call fails early - otherwise the unapplied remainder trips the
+        // `debug_assert!` in `TexturesDelta::drop`.
+        let result = (|| -> Result<()> {
+            for (tid, deltas) in delta.set.clone() {
+                if let Some(whole) = deltas.iter().find(|d| d.is_whole()) {
+                    if whole.image.width() > 0 && whole.image.height() > 0 {
+                        self.pool.insert(
+                            tid,
+                            Self::create_texture(
+                                &self.device,
+                                whole.image.clone(),
+                            )?,
+                        );
+                        // the old texture is returned and dropped here, freeing
+                        // all its gpu resource.
+                        continue;
+                    }
+                }
+                for d in deltas.iter().filter(|d| !d.is_whole()) {
+                    match self.pool.get_mut(&tid) {
+                        Some(tex) => {
+                            Self::update_partial(
+                                ctx,
+                                tex,
+                                d.image.clone(),
+                                d.pos.unwrap(),
+                            )?;
+                        },
+                        None => log::warn!(
+                            "egui wants to update a non-existing texture {tid:?}. this request will be ignored."
+                        ),
+                    }
+                }
             }
-        }
-        for tid in delta.free {
-            self.pool.remove(&tid);
-        }
-        Ok(())
+            for tid in delta.free.iter() {
+                self.pool.remove(tid);
+            }
+            Ok(())
+        })();
+        delta.clear();
+        result
     }
 
     fn update_partial(

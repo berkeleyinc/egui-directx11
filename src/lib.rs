@@ -262,10 +262,8 @@ impl Renderer {
                         .into_iter()
                         .map(|Vertex { pos, uv, color }| VertexData {
                             pos: Pos2::new(
-                                pos.x / frame_size_scaled.0 * 2.0
-                                    - 1.0,
-                                1.0 - pos.y / frame_size_scaled.1
-                                    * 2.0,
+                                pos.x / frame_size_scaled.0 * 2.0 - 1.0,
+                                1.0 - pos.y / frame_size_scaled.1 * 2.0,
                             ),
                             uv,
                             color: [
@@ -278,8 +276,7 @@ impl Renderer {
                         .collect(),
                     idx: mesh.indices,
                     tex: mesh.texture_id,
-                    clip_rect: clip_rect
-                        * egui_output.pixels_per_point,
+                    clip_rect: clip_rect * egui_output.pixels_per_point,
                 })
             });
         for mesh in meshes {
@@ -361,59 +358,62 @@ impl Renderer {
         Ok(())
     }
 
-fn draw_mesh(
-    device: &ID3D11Device,
-    device_context: &ID3D11DeviceContext,
-    texture_pool: &TexturePool,
-    mesh: MeshData,
-    render_target_size: (u32, u32), // Add this parameter
-) -> Result<()> {
-    let vb = Self::create_index_buffer(device, &mesh.idx)?;
-    let ib = Self::create_vertex_buffer(device, &mesh.vtx)?;
-    
-    // Clamp scissor rect to render target bounds
-    let scissor_rect = RECT {
-        left: mesh.clip_rect.left().max(0.0) as i32,
-        top: mesh.clip_rect.top().max(0.0) as i32,
-        right: mesh.clip_rect.right().min(render_target_size.0 as f32) as i32,
-        bottom: mesh.clip_rect.bottom().min(render_target_size.1 as f32) as i32,
-    };
-    
-    // Skip drawing if scissor rect is invalid
-    if scissor_rect.left >= scissor_rect.right || scissor_rect.top >= scissor_rect.bottom {
-        return Ok(());
-    }
-    
-    unsafe {
-        device_context.IASetVertexBuffers(
-            0,
-            1,
-            Some(&Some(ib)),
-            Some(&(mem::size_of::<VertexData>() as _)),
-            Some(&0),
-        );
-        device_context.IASetIndexBuffer(&vb, DXGI_FORMAT_R32_UINT, 0);
-        device_context.RSSetScissorRects(Some(&[scissor_rect]));
-    }
-    
-    if let Some(srv) = texture_pool.get_srv(mesh.tex) {
-        unsafe {
-            device_context.PSSetShaderResources(0, Some(&[Some(srv)]))
-        };
-    } else {
-        log::warn!(
-            concat!(
-                "egui wants to sample a non-existing texture {:?}.",
-                "this request will be ignored."
-            ),
-            mesh.tex
-        );
-    };
-    
-    unsafe { device_context.DrawIndexed(mesh.idx.len() as _, 0, 0) };
-    Ok(())
-}
+    fn draw_mesh(
+        device: &ID3D11Device,
+        device_context: &ID3D11DeviceContext,
+        texture_pool: &TexturePool,
+        mesh: MeshData,
+        render_target_size: (u32, u32), // Add this parameter
+    ) -> Result<()> {
+        let vb = Self::create_index_buffer(device, &mesh.idx)?;
+        let ib = Self::create_vertex_buffer(device, &mesh.vtx)?;
 
+        // Clamp scissor rect to render target bounds
+        let scissor_rect = RECT {
+            left: mesh.clip_rect.left().max(0.0) as i32,
+            top: mesh.clip_rect.top().max(0.0) as i32,
+            right: mesh.clip_rect.right().min(render_target_size.0 as f32)
+                as i32,
+            bottom: mesh.clip_rect.bottom().min(render_target_size.1 as f32)
+                as i32,
+        };
+
+        // Skip drawing if scissor rect is invalid
+        if scissor_rect.left >= scissor_rect.right
+            || scissor_rect.top >= scissor_rect.bottom
+        {
+            return Ok(());
+        }
+
+        unsafe {
+            device_context.IASetVertexBuffers(
+                0,
+                1,
+                Some(&Some(ib)),
+                Some(&(mem::size_of::<VertexData>() as _)),
+                Some(&0),
+            );
+            device_context.IASetIndexBuffer(&vb, DXGI_FORMAT_R32_UINT, 0);
+            device_context.RSSetScissorRects(Some(&[scissor_rect]));
+        }
+
+        if let Some(srv) = texture_pool.get_srv(mesh.tex) {
+            unsafe {
+                device_context.PSSetShaderResources(0, Some(&[Some(srv)]))
+            };
+        } else {
+            log::warn!(
+                concat!(
+                    "egui wants to sample a non-existing texture {:?}.",
+                    "this request will be ignored."
+                ),
+                mesh.tex
+            );
+        };
+
+        unsafe { device_context.DrawIndexed(mesh.idx.len() as _, 0, 0) };
+        Ok(())
+    }
 }
 
 impl Renderer {
